@@ -1,0 +1,23 @@
+# videos/audio
+*.mp4
+*.wav
+*.mp3
+
+# AI models
+*.onnx
+
+# ffmpeg
+ffmpeg-8.1-essentials_build/
+
+# piper
+piper/
+
+# node
+node_modules/
+
+# python
+venv/
+__pycache__/
+
+# secrets
+.env

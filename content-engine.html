@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContentForge — AI Content Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c26;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --text:#f0f0f5;--muted:#6b6b80;
+  --accent:#7c6aff;--accent2:#ff6a6a;--accent3:#6affb8;--accent4:#ffb86a;
+  --glow:rgba(124,106,255,0.18);
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--display:'Syne',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5}
+
+header{position:sticky;top:0;z-index:100;background:rgba(10,10,15,0.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 28px;height:56px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.logo-dot{width:8px;height:8px;background:var(--accent);border-radius:50%;box-shadow:0 0 10px var(--accent);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.hbadge{font-family:var(--mono);font-size:12px;color:var(--accent3);border:1px solid rgba(106,255,184,.25);padding:3px 10px;border-radius:20px;letter-spacing:.07em}
+.provider-pill{font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:20px;letter-spacing:.06em;transition:all .3s}
+.provider-pill.p-anthropic{color:var(--accent);border:1px solid rgba(124,106,255,.3);background:rgba(124,106,255,.1)}
+.provider-pill.p-openai{color:#74aa9c;border:1px solid rgba(116,170,156,.3);background:rgba(116,170,156,.1)}
+.provider-pill.p-groq{color:var(--accent4);border:1px solid rgba(255,184,106,.3);background:rgba(255,184,106,.1)}
+.provider-pill.p-gemini{color:#4285f4;border:1px solid rgba(66,133,244,.3);background:rgba(66,133,244,.1)}
+.provider-pill.p-mistral{color:#ff6a6a;border:1px solid rgba(255,106,106,.3);background:rgba(255,106,106,.1)}
+
+/* GLOBAL PROGRESS BAR */
+#globalBar{position:fixed;top:56px;left:0;right:0;z-index:200;height:3px;background:transparent;display:none}
+#globalBarFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#b06aff,var(--accent2));transition:width .4s ease;box-shadow:0 0 8px var(--accent)}
+#globalBarFill.indeterminate{animation:indeterminate 1.8s ease-in-out infinite}
+@keyframes indeterminate{0%{width:0%;margin-left:0}50%{width:45%;margin-left:30%}100%{width:0%;margin-left:100%}}
+
+.app{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:36px 24px 80px}
+
+.hero{margin-bottom:28px}
+.hero h1{font-family:var(--display);font-size:clamp(26px,4vw,46px);font-weight:800;line-height:1.05;letter-spacing:-.03em;margin-bottom:9px}
+.hero h1 span{background:linear-gradient(135deg,var(--accent) 0%,#b06aff 50%,var(--accent2) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{color:var(--muted);font-size:16px;font-weight:300;max-width:500px;line-height:1.65}
+
+/* CONTROLS */
+.controls{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:24px}
+.ctrls-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:11px;margin-bottom:14px}
+.ctrls-bottom{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.field label{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+.field select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:14px;padding:10px 12px;outline:none;appearance:none;cursor:pointer;transition:border-color .2s}
+.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.api-wrap{flex:1;min-width:200px}
+.api-wrap label{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.08em;margin-bottom:7px}
+.api-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--mono);font-size:13px;padding:10px 12px;outline:none;transition:border-color .2s}
+.api-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.gen-btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 24px;font-family:var(--display);font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:8px}
+.gen-btn:hover{background:#8f7aff;transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,106,255,.35)}
+.gen-btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* STATUS PANEL */
+#statusPanel{display:none;background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:18px 22px;margin-bottom:24px}
+.sp-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.sp-left{}
+.sp-label{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--accent);text-transform:uppercase;margin-bottom:4px}
+.sp-msg{font-size:14px;color:var(--muted);font-style:italic}
+.sp-timer{text-align:right}
+.timer-big{font-family:var(--mono);font-size:34px;font-weight:500;color:var(--text);letter-spacing:.02em;line-height:1}
+.timer-label{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+.timer-etd{font-family:var(--mono);font-size:13px;color:var(--accent3);margin-top:4px;letter-spacing:.04em}
+
+/* PROGRESS BAR INLINE */
+.prog-wrap{background:var(--surface2);border-radius:6px;height:5px;overflow:hidden;margin-bottom:11px;position:relative}
+.prog-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),#b06aff,var(--accent2));transition:width .6s cubic-bezier(.4,0,.2,1);box-shadow:0 0 5px rgba(124,106,255,.5)}
+
+/* STEPS */
+.steps{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+.step{flex:1;padding:7px 4px;text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--muted);background:var(--surface2);border-right:1px solid var(--border);transition:all .35s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step:last-child{border-right:none}
+.step.done{background:rgba(106,255,184,.07);color:var(--accent3)}
+.step.active{background:rgba(124,106,255,.13);color:var(--accent);font-weight:500}
+
+/* IDEAS */
+.ideas-section{margin-bottom:28px;display:none}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+.sec-title{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.sec-count{font-family:var(--mono);font-size:13px;color:var(--accent);background:var(--glow);padding:3px 10px;border-radius:20px}
+.ideas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:9px}
+.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:14px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.idea-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--glow) 0%,transparent 70%);opacity:0;transition:opacity .2s}
+.idea-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.idea-card:hover::before,.idea-card.selected::before{opacity:1}
+.idea-card.selected{border-color:var(--accent);background:var(--surface2)}
+.idea-num{font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:5px}
+.idea-title{font-family:var(--display);font-size:15px;font-weight:600;line-height:1.35;margin-bottom:7px;position:relative}
+.idea-hook{font-size:13px;color:var(--muted);line-height:1.5;font-style:italic;position:relative}
+.idea-tag{display:inline-block;margin-top:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:3px 8px;border-radius:5px;position:relative}
+.tag-finance{background:rgba(255,106,106,.12);color:var(--accent2)}
+.tag-tech{background:rgba(124,106,255,.12);color:var(--accent)}
+.tag-other{background:rgba(255,184,106,.12);color:var(--accent4)}
+
+/* PACKAGE */
+.pkg-section{background:var(--surface);border:1px solid var(--border2);border-radius:16px;overflow:hidden;display:none}
+.pkg-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:var(--surface2)}
+.pkg-title{font-family:var(--display);font-size:17px;font-weight:700}
+.pkg-hook{font-size:14px;color:var(--muted);margin-top:3px}
+.pkg-pills{display:flex;gap:6px;flex-shrink:0}
+.mpill{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid;white-space:nowrap}
+.pill-yt{color:var(--accent2);border-color:rgba(255,106,106,.3);background:rgba(255,106,106,.08)}
+.pill-ig{color:#ff9a6a;border-color:rgba(255,154,106,.3);background:rgba(255,154,106,.08)}
+.pill-dur{color:var(--accent3);border-color:rgba(106,255,184,.3);background:rgba(106,255,184,.08)}
+
+.tabs{display:flex;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.tab{padding:13px 18px;font-family:var(--mono);font-size:12px;letter-spacing:.05em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none;outline:none}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom:2px solid var(--accent)}
+.tab-content{display:none;padding:20px}
+.tab-content.active{display:block}
+
+.script-block{margin-bottom:17px}
+.blabel{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px;display:flex;align-items:center;gap:8px}
+.blabel::after{content:'';flex:1;height:1px;background:var(--border)}
+.lhook{color:var(--accent2)}.lvalue{color:var(--accent)}.lcta{color:var(--accent3)}
+.stext{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:16px;font-size:16px;line-height:1.85;color:var(--text)}
+
+.vrow{display:grid;grid-template-columns:30px 1fr 1fr;gap:10px;align-items:start;padding:10px 0;border-bottom:1px solid var(--border)}
+.vrow:last-child{border-bottom:none}
+.vnum{font-family:var(--mono);font-size:12px;color:var(--accent);margin-top:2px}
+.vline{font-size:15px;line-height:1.5}
+.vshot{font-size:13px;color:var(--muted);line-height:1.5;font-style:italic}
+
+.eitem{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+.eitem:last-child{border-bottom:none}
+.eicon{width:27px;height:27px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.etext{font-size:15px;line-height:1.6}
+.etext strong{color:var(--accent);font-weight:500}
+
+.auto-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.auto-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:12px}
+.auto-step{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--accent);margin-bottom:5px;text-transform:uppercase}
+.auto-name{font-family:var(--display);font-size:15px;font-weight:600;margin-bottom:4px}
+.auto-desc{font-size:13px;color:var(--muted);line-height:1.5}
+.auto-tools{margin-top:7px;display:flex;flex-wrap:wrap;gap:4px}
+.ttag{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(124,106,255,.1);color:var(--accent);border:1px solid rgba(124,106,255,.2)}
+
+.aff-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:12px;margin-bottom:8px}
+.aff-name{font-weight:500;font-size:15px;margin-bottom:4px}
+.aff-desc{font-size:14px;color:var(--muted);line-height:1.5}
+.aff-comm{font-family:var(--mono);font-size:12px;color:var(--accent3);margin-top:6px}
+
+.copy-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 13px;font-family:var(--mono);font-size:12px;cursor:pointer;transition:all .2s;letter-spacing:.05em;margin-top:10px}
+.copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+.copy-btn.copied{border-color:var(--accent3)!important;color:var(--accent3)!important}
+
+.vo-text{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:16px;font-size:16px;line-height:2;color:var(--text);font-style:italic}
+.vo-tip{margin-top:10px;padding:12px;background:rgba(106,255,184,.06);border:1px solid rgba(106,255,184,.15);border-radius:8px;font-size:14px;color:var(--accent3);line-height:1.6}
+.info-tip{margin-top:10px;padding:12px;background:rgba(124,106,255,.06);border:1px solid rgba(124,106,255,.15);border-radius:8px;font-size:14px;color:var(--accent);line-height:1.6}
+.green-tip{margin-top:10px;padding:12px;background:rgba(106,255,184,.06);border:1px solid rgba(106,255,184,.15);border-radius:8px;font-size:14px;color:var(--accent3);line-height:1.6}
+
+/* DEPLOY */
+.deploy-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px}
+.deploy-num{font-family:var(--mono);font-size:11px;color:var(--accent4);letter-spacing:.08em;margin-bottom:6px;text-transform:uppercase}
+.deploy-title{font-family:var(--display);font-size:16px;font-weight:600;margin-bottom:6px}
+.deploy-desc{font-size:14px;color:var(--muted);line-height:1.65;margin-bottom:9px}
+.code-block{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:var(--mono);font-size:13px;color:var(--accent3);line-height:1.9;overflow-x:auto;white-space:pre;tab-size:2}
+
+/* LOADING INSIDE TAB */
+.load-overlay{display:none;padding:48px 20px;text-align:center}
+.load-bars{display:flex;gap:5px;justify-content:center;margin-bottom:15px}
+.bar{width:4px;height:28px;background:var(--accent);border-radius:2px;animation:barP 1.2s ease-in-out infinite}
+.bar:nth-child(2){animation-delay:.1s;height:20px}
+.bar:nth-child(3){animation-delay:.2s;height:36px}
+.bar:nth-child(4){animation-delay:.3s;height:16px}
+.bar:nth-child(5){animation-delay:.4s;height:30px}
+@keyframes barP{0%,100%{opacity:.3;transform:scaleY(.8)}50%{opacity:1;transform:scaleY(1)}}
+.load-text{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.07em}
+.load-status{font-size:13px;color:var(--accent);margin-top:5px;font-family:var(--mono)}
+
+.empty-state{text-align:center;padding:56px 24px;color:var(--muted)}
+.empty-icon{font-size:32px;margin-bottom:10px}
+.empty-text{font-size:15px;line-height:1.6}
+.error-box{background:rgba(255,106,106,.08);border:1px solid rgba(255,106,106,.25);border-radius:9px;padding:14px;font-size:15px;color:var(--accent2);line-height:1.65}
+
+@media(max-width:640px){
+  .ctrls-grid{grid-template-columns:1fr 1fr}
+  .auto-grid{grid-template-columns:1fr}
+  .vrow{grid-template-columns:26px 1fr}
+  .vshot{display:none}
+  header{padding:0 14px}
+  .app{padding:18px 14px 60px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>ContentForge</div>
+  <span class="hbadge">AI ENGINE v2.0</span>
+  <span class="provider-pill" id="providerPill">● CLAUDE</span>
+</header>
+
+<div id="globalBar"><div id="globalBarFill"></div></div>
+
+<div class="app">
+  <div class="hero">
+    <h1>Generate <span>viral content</span><br>on autopilot.</h1>
+    <p>Full video packages for YouTube Shorts &amp; Instagram Reels. Scripts, visuals, editing plans, automation &amp; deploy guide — all AI-powered.</p>
+  </div>
+
+  <div class="controls">
+    <div class="ctrls-grid">
+      <div class="field">
+        <label>Niche</label>
+        <select id="niche">
+          <option value="tech_ai">Tech / AI Tools</option>
+          <option value="finance">Finance / Money</option>
+          <option value="both">AI + Finance Mixed</option>
+          <option value="productivity">Productivity Hacks</option>
+          <option value="saas">SaaS Reviews</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Content Style</label>
+        <select id="style">
+          <option value="educational">Educational / Tips</option>
+          <option value="listicle">Listicle / Ranked</option>
+          <option value="news">Trending News</option>
+          <option value="tutorial">Quick Tutorial</option>
+          <option value="myth">Myth Busting</option>
+          <option value="story">Mini Story / Case Study</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Video Length</label>
+        <select id="length">
+          <option value="30">30 seconds</option>
+          <option value="45">45 seconds</option>
+          <option value="60" selected>60 seconds</option>
+          <option value="90">90 seconds</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Tone</label>
+        <select id="tone">
+          <option value="punchy">Punchy &amp; Fast</option>
+          <option value="professional">Professional</option>
+          <option value="casual">Casual &amp; Friendly</option>
+          <option value="hype">Hype / Energetic</option>
+          <option value="calm">Calm &amp; Informative</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Platform</label>
+        <select id="platform">
+          <option value="both">YouTube + Instagram</option>
+          <option value="youtube">YouTube Shorts first</option>
+          <option value="instagram">Instagram Reels first</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Ideas Count</label>
+        <select id="ideaCount">
+          <option value="5">5 ideas</option>
+          <option value="10" selected>10 ideas</option>
+          <option value="15">15 ideas</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>AI Provider</label>
+        <select id="provider" onchange="onProviderChange()">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="groq">Groq (Llama 3 — Free)</option>
+          <option value="gemini">Google (Gemini 1.5)</option>
+          <option value="mistral">Mistral</option>
+        </select>
+      </div>
+    </div>
+    <div class="ctrls-bottom">
+      <div class="api-wrap">
+        <label>API KEY — for local use (optional inside claude.ai)</label>
+        <input class="api-input" type="password" id="apiKey" placeholder="Paste your API key here" autocomplete="off">
+      </div>
+      <button class="gen-btn" id="genBtn" onclick="generateIdeas()">
+        <div class="spinner" id="spinner"></div>
+        <span id="btnText">⚡ Generate Ideas</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- STATUS PANEL -->
+  <div id="statusPanel">
+    <div class="sp-top">
+      <div class="sp-left">
+        <div class="sp-label" id="statusLabel">GENERATING IDEAS</div>
+        <div class="sp-msg" id="statusMsg">Scanning trending topics...</div>
+      </div>
+      <div class="sp-timer">
+        <div class="timer-big" id="timerBig">0.0</div>
+        <div class="timer-label" id="timerLabel">ELAPSED</div>
+        <div class="timer-etd" id="etdVal">—</div>
+      </div>
+    </div>
+    <div class="prog-wrap"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+    <div class="steps" id="stepsRow">
+      <div class="step" id="step0">TRENDS</div>
+      <div class="step" id="step1">SCRIPT</div>
+      <div class="step" id="step2">VOICEOVER</div>
+      <div class="step" id="step3">VISUALS</div>
+      <div class="step" id="step4">EDITING</div>
+      <div class="step" id="step5">AFFILIATE</div>
+    </div>
+  </div>
+
+  <!-- IDEAS GRID -->
+  <div class="ideas-section" id="ideasSection">
+    <div class="sec-hdr">
+      <span class="sec-title">Video Ideas — click any to build full package</span>
+      <span class="sec-count" id="ideasCount">0 ideas</span>
+    </div>
+    <div class="ideas-grid" id="ideasGrid"></div>
+  </div>
+
+  <!-- PACKAGE -->
+  <div class="pkg-section" id="packageSection">
+    <div class="pkg-hdr">
+      <div>
+        <div class="pkg-title" id="pkgTitle">Video Package</div>
+        <div class="pkg-hook" id="pkgHook"></div>
+      </div>
+      <div class="pkg-pills">
+        <span class="mpill pill-yt">YT SHORTS</span>
+        <span class="mpill pill-ig">REELS</span>
+        <span class="mpill pill-dur" id="durPill">≤60s</span>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('script',this)">📝 Script</button>
+      <button class="tab" onclick="switchTab('voiceover',this)">🎙 Voiceover</button>
+      <button class="tab" onclick="switchTab('visuals',this)">🎬 Visuals</button>
+      <button class="tab" onclick="switchTab('editing',this)">✂️ Editing</button>
+      <button class="tab" onclick="switchTab('automation',this)">🤖 Automation</button>
+      <button class="tab" onclick="switchTab('affiliate',this)">💰 Affiliate</button>
+      <button class="tab" onclick="switchTab('deploy',this)">🚀 Local Deploy</button>
+    </div>
+    <div class="tab-content active" id="tab-script">
+      <div class="load-overlay" id="pkgLoading">
+        <div class="load-bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+        <div class="load-text">GENERATING FULL PACKAGE</div>
+        <div class="load-status" id="pkgLoadMsg">Crafting viral hook...</div>
+      </div>
+      <div id="scriptContent"></div>
+    </div>
+    <div class="tab-content" id="tab-voiceover"><div id="voContent"></div></div>
+    <div class="tab-content" id="tab-visuals"><div id="visContent"></div></div>
+    <div class="tab-content" id="tab-editing"><div id="editContent"></div></div>
+    <div class="tab-content" id="tab-automation"><div id="autoContent"></div></div>
+    <div class="tab-content" id="tab-affiliate"><div id="affContent"></div></div>
+    <div class="tab-content" id="tab-deploy"><div id="deployContent"></div></div>
+  </div>
+
+  <div id="emptyState" class="empty-state">
+    <div class="empty-icon">🚀</div>
+    <div class="empty-text">Pick your niche &amp; options above, then hit Generate Ideas.<br>Click any idea card to build the complete video package.</div>
+  </div>
+</div>
+
+<script>
+/* STATE */
+let timerInterval = null, timerStart = 0, msgRotator = null;
+
+const STEPS = ['TRENDS','SCRIPT','VOICEOVER','VISUALS','EDITING','AFFILIATE'];
+const IDEAS_MSGS = ['Scanning trending AI tools...','Analysing viral hooks...','Checking search demand...','Ranking content angles...','Almost done...'];
+const PKG_MSGS = ['Crafting viral hook...','Writing value section...','Optimising for virality...','Planning visual shots...','Building edit guide...','Finding affiliates...','Packaging...'];
+const STEP_LABELS = ['Crafting hook...','Writing script...','Generating voiceover...','Planning visuals...','Building edit guide...','Finding affiliates...'];
+
+/* TIMER + ETD */
+const AVG_IDEAS_MS = 8000;
+const AVG_PKG_MS   = 14000;
+let etdMs = AVG_IDEAS_MS;
+
+function startTimer(label, estimatedMs) {
+  timerStart = Date.now();
+  etdMs = estimatedMs || AVG_IDEAS_MS;
+  clearInterval(timerInterval);
+
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - timerStart;
+    document.getElementById('timerBig').textContent = (elapsed/1000).toFixed(1);
+
+    const remaining = Math.max(0, etdMs - elapsed);
+    const etdEl = document.getElementById('etdVal');
+    if (etdEl) {
+      etdEl.textContent = elapsed > etdMs ? 'almost done...' : '~' + (remaining/1000).toFixed(1) + 's remaining';
+    }
+
+    const pct = Math.min(93, Math.round((elapsed / etdMs) * 100));
+    document.getElementById('globalBarFill').style.width = pct + '%';
+    document.getElementById('progFill').style.width = pct + '%';
+  }, 100);
+
+  document.getElementById('statusLabel').textContent = label;
+  document.getElementById('statusPanel').style.display = 'block';
+  document.getElementById('timerLabel').textContent = 'ELAPSED';
+  const etdEl = document.getElementById('etdVal');
+  if (etdEl) etdEl.textContent = 'calculating...';
+  const bar = document.getElementById('globalBar');
+  bar.style.display = 'block';
+  const fill = document.getElementById('globalBarFill');
+  fill.className = '';
+  fill.style.width = '2%';
+  fill.style.background = '';
+  fill.style.transition = 'width 0.3s ease';
+}
+
+function stopTimer(ok) {
+  clearInterval(timerInterval);
+  const elapsed = ((Date.now()-timerStart)/1000).toFixed(1);
+  document.getElementById('timerBig').textContent = elapsed;
+  document.getElementById('timerLabel').textContent = ok ? 'SECONDS ✓ DONE' : 'SECONDS — ERROR';
+  const fill = document.getElementById('globalBarFill');
+  fill.className = '';
+  fill.style.width = '100%';
+  if (ok) fill.style.background = 'linear-gradient(90deg,var(--accent3),#2aff9a)';
+  else fill.style.background = 'var(--accent2)';
+  setTimeout(() => {
+    document.getElementById('globalBar').style.display = 'none';
+    fill.style.width = '0'; fill.style.background = '';
+  }, 2200);
+}
+
+function setStep(i) {
+  STEPS.forEach((_,j) => {
+    const el = document.getElementById('step'+j);
+    if (!el) return;
+    el.className = 'step' + (j<i?' done':j===i?' active':'');
+  });
+  document.getElementById('progFill').style.width = Math.round((i/(STEPS.length-1))*100)+'%';
+}
+
+function startMsgs(msgs, elId) {
+  let i = 0;
+  const el = document.getElementById(elId);
+  if (el) el.textContent = msgs[0];
+  clearInterval(msgRotator);
+  msgRotator = setInterval(() => { i=(i+1)%msgs.length; if(el) el.textContent=msgs[i]; }, 1100);
+}
+function stopMsgs() { clearInterval(msgRotator); }
+
+/* PROVIDER CONFIG */
+const PROVIDERS = {
+  anthropic: {
+    label: '● CLAUDE',
+    cls: 'p-anthropic',
+    url: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-sonnet-4-20250514',
+    keyHint: 'sk-ant-... — get free at console.anthropic.com',
+    buildHeaders: (key) => ({
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      ...(key ? {'x-api-key': key} : {})
+    }),
+    buildBody: (prompt, system) => JSON.stringify({
+      model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+      system, messages: [{role:'user', content: prompt}]
+    }),
+    extractText: (d) => {
+      if (d.error) throw new Error(d.error.message + (d.error.type?' ['+d.error.type+']':''));
+      if (!d.content?.[0]?.text) throw new Error('Empty response');
+      return d.content[0].text;
+    }
+  },
+  openai: {
+    label: '● GPT-4o',
+    cls: 'p-openai',
+    url: 'https://api.openai.com/v1/chat/completions',
+    keyHint: 'sk-... — get at platform.openai.com',
+    buildHeaders: (key) => ({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + key
+    }),
+    buildBody: (prompt, system) => JSON.stringify({
+      model: 'gpt-4o', max_tokens: 1000,
+      messages: [{role:'system', content: system}, {role:'user', content: prompt}]
+    }),
+    extractText: (d) => {
+      if (d.error) throw new Error(d.error.message);
+      if (!d.choices?.[0]?.message?.content) throw new Error('Empty response');
+      return d.choices[0].message.content;
+    }
+  },
+  groq: {
+    label: '● GROQ',
+    cls: 'p-groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    keyHint: 'gsk_... — free at console.groq.com',
+    buildHeaders: (key) => ({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + key
+    }),
+    buildBody: (prompt, system) => JSON.stringify({
+      model: 'llama3-70b-8192', max_tokens: 1000,
+      messages: [{role:'system', content: system}, {role:'user', content: prompt}]
+    }),
+    extractText: (d) => {
+      if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+      if (!d.choices?.[0]?.message?.content) throw new Error('Empty response');
+      return d.choices[0].message.content;
+    }
+  },
+  gemini: {
+    label: '● GEMINI',
+    cls: 'p-gemini',
+    url: null, // built dynamically with key
+    keyHint: 'AIza... — free at aistudio.google.com',
+    buildHeaders: () => ({'Content-Type': 'application/json'}),
+    buildBody: (prompt, system) => JSON.stringify({
+      contents: [{parts: [{text: system + '\n\n' + prompt}]}],
+      generationConfig: {maxOutputTokens: 1000}
+    }),
+    extractText: (d) => {
+      if (d.error) throw new Error(d.error.message);
+      if (!d.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error('Empty response');
+      return d.candidates[0].content.parts[0].text;
+    }
+  },
+  mistral: {
+    label: '● MISTRAL',
+    cls: 'p-mistral',
+    url: 'https://api.mistral.ai/v1/chat/completions',
+    keyHint: 'Paste key from console.mistral.ai',
+    buildHeaders: (key) => ({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + key
+    }),
+    buildBody: (prompt, system) => JSON.stringify({
+      model: 'mistral-large-latest', max_tokens: 1000,
+      messages: [{role:'system', content: system}, {role:'user', content: prompt}]
+    }),
+    extractText: (d) => {
+      if (d.error) throw new Error(d.error.message);
+      if (!d.choices?.[0]?.message?.content) throw new Error('Empty response');
+      return d.choices[0].message.content;
+    }
+  }
+};
+
+function onProviderChange() {
+  const id = document.getElementById('provider').value;
+  const p = PROVIDERS[id];
+  const pill = document.getElementById('providerPill');
+  pill.textContent = p.label;
+  pill.className = 'provider-pill ' + p.cls;
+  document.getElementById('apiKey').placeholder = p.keyHint;
+  // Anthropic works without key in claude.ai env
+  const keyWrap = document.getElementById('apiKey').parentElement;
+  if (id === 'anthropic') {
+    keyWrap.querySelector('.api-wrap label').textContent = 'API KEY — optional inside claude.ai';
+  } else {
+    keyWrap.querySelector('.api-wrap label').textContent = 'API KEY — required for ' + p.label.replace('● ','');
+  }
+}
+
+/* API */
+async function callClaude(prompt, system) {
+  const id = document.getElementById('provider').value;
+  const p = PROVIDERS[id];
+  const key = document.getElementById('apiKey').value.trim();
+
+  if (id !== 'anthropic' && !key) {
+    throw new Error('API key required for ' + p.label.replace('● ','') + '. Get one free at: ' + p.keyHint.split(' — get')[1]?.trim() || 'the provider website');
+  }
+
+  let url = p.url;
+  if (id === 'gemini') {
+    if (!key) throw new Error('API key required for Gemini. ' + p.keyHint);
+    url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + key;
+  }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: p.buildHeaders(key),
+      body: p.buildBody(prompt, system)
+    });
+  } catch(fetchErr) {
+    throw new Error('Network error — ' + fetchErr.message);
+  }
+
+  let d;
+  try { d = await res.json(); } catch(e) { throw new Error('Bad response (HTTP ' + res.status + ')'); }
+  return p.extractText(d);
+}
+
+function parseJ(raw, type) {
+  try { return JSON.parse(raw.trim()); } catch {}
+  const m = raw.match(type==='array'?/\[[\s\S]*\]/:/\{[\s\S]*\}/);
+  if (m) try { return JSON.parse(m[0]); } catch {}
+  return type==='array'?[]:{};
+}
+
+/* GENERATE IDEAS */
+async function generateIdeas() {
+  const niche=document.getElementById('niche').value;
+  const style=document.getElementById('style').value;
+  const count=document.getElementById('ideaCount').value;
+  const length=document.getElementById('length').value;
+  const tone=document.getElementById('tone').value;
+
+  setBusy(true);
+  document.getElementById('emptyState').style.display='none';
+  document.getElementById('ideasSection').style.display='none';
+  document.getElementById('packageSection').style.display='none';
+
+  startTimer('GENERATING '+count+' IDEAS', AVG_IDEAS_MS);
+  setStep(0);
+  startMsgs(IDEAS_MSGS,'statusMsg');
+
+  const N={tech_ai:'AI Tools & Tech',finance:'Finance & Money',both:'AI Tools, Tech & Finance',productivity:'Productivity Hacks',saas:'SaaS Tool Reviews'};
+  const S={educational:'educational tips',listicle:'listicle ranked list',news:'trending news angle',tutorial:'quick step-by-step tutorial',myth:'myth busting and debunking',story:'mini story or case study'};
+  const T={punchy:'punchy and fast-paced',professional:'professional and authoritative',casual:'casual and friendly',hype:'hype and high energy',calm:'calm and informative'};
+
+  try {
+    const raw = await callClaude(
+      `Generate exactly ${count} viral short-form video ideas. Niche: ${N[niche]}. Style: ${S[style]}. Tone: ${T[tone]}. Length: ${length}s.
+Return ONLY a JSON array, no markdown:
+[{"title":"video title","hook":"opening hook under 10 words","tag":"AI" or "FINANCE" or "TECH" or "PRODUCTIVITY" or "SAAS"}]`,
+      'You are a viral content strategist. Return only raw JSON arrays, no markdown, no explanation.'
+    );
+    stopMsgs();
+    const ideas = parseJ(raw,'array');
+    renderIdeas(ideas, niche, style, length, tone);
+    stopTimer(true);
+  } catch(e) {
+    stopMsgs(); stopTimer(false);
+    document.getElementById('statusMsg').textContent = 'Failed: '+e.message;
+    document.getElementById('emptyState').style.display='block';
+    document.getElementById('emptyState').innerHTML=`<div class="error-box"><strong>Error:</strong> ${e.message}<br><br>Running locally? Paste your Anthropic API key in the field above (get one free at console.anthropic.com).</div>`;
+  }
+  setBusy(false);
+}
+
+function renderIdeas(ideas, niche, style, length, tone) {
+  const grid = document.getElementById('ideasGrid');
+  grid.innerHTML = '';
+  document.getElementById('ideasCount').textContent = ideas.length+' ideas';
+  document.getElementById('ideasSection').style.display = 'block';
+  ideas.forEach((idea, i) => {
+    const card = document.createElement('div');
+    card.className = 'idea-card';
+    const tc = idea.tag==='FINANCE'?'tag-finance':(idea.tag==='AI'||idea.tag==='TECH')?'tag-tech':'tag-other';
+    card.innerHTML = `<div class="idea-num">// ${String(i+1).padStart(2,'0')}</div>
+      <div class="idea-title">${idea.title}</div>
+      <div class="idea-hook">"${idea.hook}"</div>
+      <span class="idea-tag ${tc}">${idea.tag||'AI'}</span>`;
+    card.onclick = () => selectIdea(idea, card, niche, style, length, tone);
+    grid.appendChild(card);
+  });
+}
+
+/* SELECT IDEA */
+async function selectIdea(idea, card, niche, style, length, tone) {
+  document.querySelectorAll('.idea-card').forEach(c=>c.classList.remove('selected'));
+  card.classList.add('selected');
+
+  document.getElementById('packageSection').style.display='block';
+  document.getElementById('pkgTitle').textContent=idea.title;
+  document.getElementById('pkgHook').textContent='🎯 '+idea.hook;
+  document.getElementById('durPill').textContent='≤'+length+'s';
+
+  ['scriptContent','voContent','visContent','editContent','autoContent','affContent','deployContent'].forEach(id=>document.getElementById(id).innerHTML='');
+  switchTabFirst();
+
+  document.getElementById('pkgLoading').style.display='block';
+  document.getElementById('scriptContent').innerHTML='';
+
+  const NC={tech_ai:'AI Tools & Tech',finance:'Finance & Money making',both:'AI Tools, Tech & Finance',productivity:'Productivity Hacks',saas:'SaaS Tool Reviews'};
+  const TC={punchy:'punchy fast-paced',professional:'professional authoritative',casual:'casual friendly',hype:'hype high-energy',calm:'calm informative'};
+
+  startTimer('BUILDING VIDEO PACKAGE', AVG_PKG_MS);
+  setStep(1);
+  startMsgs(PKG_MSGS,'pkgLoadMsg');
+
+  let si=1;
+  const stepLoop = setInterval(()=>{ if(si<6){setStep(si);document.getElementById('pkgLoadMsg').textContent=STEP_LABELS[si];si++;} },1300);
+
+  try {
+    const raw = await callClaude(
+      `Create a complete viral video content package.
+Title: "${idea.title}"
+Hook: "${idea.hook}"
+Niche: ${NC[niche]}. Tone: ${TC[tone]}. Length: ${length}s.
+
+Return ONLY raw JSON no markdown:
+{
+  "script":{"hook":"2s ultra-punchy 1-2 sentences","value":"3-5 fast sentences with numbers/facts","cta":"1 sentence, follow/link in bio"},
+  "voiceover":"full voiceover under ${Math.round(length*2.1)} words, ElevenLabs-optimised, natural commas for pauses",
+  "visuals":[{"line":"script sentence","shot":"specific footage or screen recording description"}],
+  "editing":[{"type":"caption|zoom|transition|effect|music","icon":"one emoji","instruction":"exact CapCut step with timing"}],
+  "affiliate":[{"name":"product/tool","relevance":"why fits this video","commission":"commission rate","platform":"where to sign up"}]
+}`,
+      'You are a viral short-form content expert. Return only raw JSON, no markdown backticks.'
+    );
+
+    clearInterval(stepLoop); stopMsgs(); setStep(5);
+    document.getElementById('pkgLoading').style.display='none';
+
+    const pkg = parseJ(raw,'object');
+    if (!pkg.script) throw new Error('Invalid response — try again.');
+    renderPackage(pkg, idea, length);
+    renderDeploy();
+    stopTimer(true);
+  } catch(e) {
+    clearInterval(stepLoop); stopMsgs(); stopTimer(false);
+    document.getElementById('pkgLoading').style.display='none';
+    document.getElementById('scriptContent').innerHTML=`<div class="error-box"><strong>Package failed:</strong> ${e.message}</div>`;
+  }
+}
+
+/* RENDER */
+function renderPackage(pkg, idea, length) {
+  document.getElementById('scriptContent').innerHTML = `
+    <div class="script-block">
+      <div class="blabel lhook">🔥 Hook — 0 to 2 sec</div>
+      <div class="stext">${pkg.script.hook}</div>
+    </div>
+    <div class="script-block">
+      <div class="blabel lvalue">⚡ Value — 2 to ${length-10} sec</div>
+      <div class="stext">${pkg.script.value}</div>
+    </div>
+    <div class="script-block">
+      <div class="blabel lcta">🎯 CTA — final 10 sec</div>
+      <div class="stext">${pkg.script.cta}</div>
+    </div>
+    <button class="copy-btn" onclick="cp(this,'${x(pkg.script.hook+' '+pkg.script.value+' '+pkg.script.cta)}')">COPY FULL SCRIPT</button>`;
+
+  document.getElementById('voContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent);margin-bottom:11px">🎙 ElevenLabs-optimised voiceover text</div>
+    <div class="vo-text">${pkg.voiceover}</div>
+    <div class="vo-tip">💡 <strong>ElevenLabs settings:</strong> Voice "Adam" or "Rachel" · Stability 0.40 · Similarity 0.75 · Export MP3 44.1kHz · Each comma = natural pause</div>
+    <button class="copy-btn" onclick="cp(this,'${x(pkg.voiceover)}')">COPY VOICEOVER</button>`;
+
+  const vrows = (pkg.visuals||[]).map((v,i)=>`<div class="vrow"><div class="vnum">${String(i+1).padStart(2,'0')}</div><div class="vline">${v.line}</div><div class="vshot">📷 ${v.shot}</div></div>`).join('');
+  document.getElementById('visContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent);margin-bottom:11px">🎬 Shot-by-shot visual plan</div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px">
+      <div style="display:grid;grid-template-columns:30px 1fr 1fr;gap:10px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">#</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">SCRIPT LINE</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">FOOTAGE</span>
+      </div>${vrows}</div>
+    <div style="margin-top:9px;font-size:12px;color:var(--muted)">📦 Free: Pexels.com · Pixabay.com · Mixkit.co · Coverr.co · Videvo.net</div>`;
+
+  const eitems = (pkg.editing||[]).map(e=>`<div class="eitem"><div class="eicon">${e.icon||'✂️'}</div><div class="etext"><strong>${(e.type||'edit').toUpperCase()}</strong><br>${e.instruction}</div></div>`).join('');
+  document.getElementById('editContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent);margin-bottom:11px">✂️ CapCut step-by-step editing guide</div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px">${eitems}</div>
+    <div class="info-tip">💡 Export: 1080×1920 (9:16) · 30fps · Auto Captions: bold white + black outline · BG music 10–15% vol</div>`;
+
+  document.getElementById('autoContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent);margin-bottom:11px">🤖 Full automation pipeline</div>
+    <div class="auto-grid">
+      ${[
+        ['Step 1 — Ideas','Trend Scraping','Daily auto-fetch from X, Reddit & Google','Google Trends API','X API','Perplexity'],
+        ['Step 2 — Script','Script Gen','Batch overnight via Claude API','Claude API','Make.com','n8n'],
+        ['Step 3 — Voice','Voiceover','Auto-convert scripts to audio files','ElevenLabs API','PlayHT','Murf.ai'],
+        ['Step 4 — Video','Auto Editing','Combine audio + footage + captions','Creatomate API','Pictory.ai','Remotion'],
+        ['Step 5 — Publish','Scheduling','Post to YT & IG at peak times','Buffer API','Later.com','Metricool'],
+        ['Orchestrate','Workflow Engine','Glue all steps into one trigger','Make.com','n8n (free)','Zapier'],
+      ].map(([s,n,d,...t])=>`<div class="auto-card"><div class="auto-step">${s}</div><div class="auto-name">${n}</div><div class="auto-desc">${d}</div><div class="auto-tools">${t.map(tt=>`<span class="ttag">${tt}</span>`).join('')}</div></div>`).join('')}
+    </div>`;
+
+  const acards = (pkg.affiliate||[]).map(a=>`<div class="aff-card"><div class="aff-name">${a.name}</div><div class="aff-desc">${a.relevance}</div><div class="aff-comm">💰 ${a.commission} · ${a.platform}</div></div>`).join('');
+  document.getElementById('affContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent);margin-bottom:11px">💰 Affiliate picks for this video</div>
+    ${acards}
+    <div class="green-tip">💡 Add affiliate links in line 1 of YT description + Instagram bio via Linktree. Always add #ad disclosure.</div>`;
+}
+
+function renderDeploy() {
+  document.getElementById('deployContent').innerHTML = `
+    <div class="blabel" style="color:var(--accent4);margin-bottom:14px">🚀 How to run this app locally or deploy it</div>
+
+    <div class="deploy-card">
+      <div class="deploy-num">Option A — Zero setup · Recommended</div>
+      <div class="deploy-title">Use inside Claude.ai (you're already doing this)</div>
+      <div class="deploy-desc">This app is designed to run in the Claude.ai artifact viewer. No API key needed, no installs. Just keep this chat open and click Generate.</div>
+    </div>
+
+    <div class="deploy-card">
+      <div class="deploy-num">Option B — Local · 2 min setup · Python</div>
+      <div class="deploy-title">Run on your laptop with Python</div>
+      <div class="deploy-desc">Save the HTML file, run one Python command, paste your API key in the app. That's it.</div>
+<div class="code-block"># 1. Save content-engine.html anywhere on your laptop
+
+# 2. Open terminal, navigate to that folder:
+cd ~/Downloads   (or wherever you saved it)
+
+# 3. Start a local server:
+python3 -m http.server 8080
+
+# 4. Open in browser:
+http://localhost:8080/content-engine.html
+
+# 5. Get your free API key at console.anthropic.com
+#    Paste it in the "API KEY" field at the top of the app</div>
+      <button class="copy-btn" onclick="cp(this,'python3 -m http.server 8080')">COPY COMMAND</button>
+    </div>
+
+    <div class="deploy-card">
+      <div class="deploy-num">Option C — Free cloud hosting · Vercel</div>
+      <div class="deploy-title">Get a public URL, use from any device</div>
+      <div class="deploy-desc">Deploy once, open from phone, laptop, anywhere. Free forever on Vercel.</div>
+<div class="code-block"># Install Vercel (one time):
+npm install -g vercel
+
+# Deploy (from the folder with your HTML file):
+vercel deploy --public
+
+# You get a URL like: https://contentforge-xyz.vercel.app
+# Open it on any device, paste API key once</div>
+    </div>
+
+    <div class="deploy-card">
+      <div class="deploy-num">Option D — Advanced · Hide your API key</div>
+      <div class="deploy-title">Node.js proxy server (secure, shareable)</div>
+      <div class="deploy-desc">Your API key never touches the browser. Best if you want to share the app with others.</div>
+<div class="code-block"># 1. In your project folder:
+npm init -y
+npm install express node-fetch cors
+
+# 2. Create server.js:
+const express = require('express');
+const fetch = require('node-fetch');
+const cors = require('cors');
+const app = express();
+app.use(cors()); app.use(express.json()); app.use(express.static('.'));
+
+app.post('/api/claude', async (req, res) => {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify(req.body)
+  });
+  res.json(await r.json());
+});
+app.listen(3000, () => console.log('Running on http://localhost:3000'));
+
+# 3. Run it:
+ANTHROPIC_KEY=sk-ant-... node server.js
+
+# 4. In content-engine.html, change the fetch URL from:
+#   'https://api.anthropic.com/v1/messages'
+# to:
+#   '/api/claude'
+# (and remove the x-api-key header block)</div>
+      <button class="copy-btn" onclick="cp(this, 'npm install express node-fetch cors')">COPY INSTALL CMD</button>
+    </div>
+
+    <div class="green-tip" style="margin-top:4px">
+      💡 <strong>API cost:</strong> Each full video package = ~$0.003 (less than ₹0.25). 100 packages/month = ~₹25. Get your free key + $5 credit at <strong>console.anthropic.com</strong>
+    </div>`;
+}
+
+/* UTILS */
+function setBusy(on) {
+  document.getElementById('genBtn').disabled=on;
+  document.getElementById('spinner').style.display=on?'block':'none';
+  document.getElementById('btnText').textContent=on?'Generating...':'⚡ Generate Ideas';
+}
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+function switchTabFirst() {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelector('.tab').classList.add('active');
+  document.getElementById('tab-script').classList.add('active');
+}
+function x(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' '); }
+function cp(btn, text) {
+  navigator.clipboard.writeText(text).then(()=>{
+    const orig=btn.textContent;
+    btn.textContent='✓ COPIED'; btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent=orig;btn.classList.remove('copied');},1800);
+  });
+}
+// init provider pill on load
+onProviderChange();
+</script>
+</body>
+</html>
